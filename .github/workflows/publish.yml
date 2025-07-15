@@ -12,6 +12,9 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Install Dependencies
+        run: npm install @notionhq/client
+
       # 2. 获取待同步的Notion条目
       - name: Fetch Notion Ready Items
         id: fetch
