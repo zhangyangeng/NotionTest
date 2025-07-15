@@ -26,11 +26,11 @@ jobs:
           script: |
             const { Client } = require('@notionhq/client')
             const notion = new Client({ auth: process.env.NOTION_TOKEN })
+            console.log(process.env);
             const res = await notion.databases.query({
               database_id: process.env.DB_ID,
               filter: { property: 'Status', select: { equals: 'Ready' } }
             })
-            console.log(process.env);
             // 输出为JSON供后续Shell解析
             return JSON.stringify(res.results.map(page => ({
               id: page.id,
