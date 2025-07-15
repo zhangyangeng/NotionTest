@@ -1,0 +1,105 @@
+name: Notion-to-GitHub-Issue-Sync
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # 每10分钟轮询
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码（用于存储脚本工具）
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # 2. 获取待同步的Notion条目
+      - name: Fetch Notion Ready Items
+        id: fetch
+        uses: actions/github-script@v6
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_API_KEY }}
+          DB_ID: ${{ secrets.NOTION_DB_ID }}
+        with:
+          script: |
+            const { Client } = require('@notionhq/client')
+            const notion = new Client({ auth: process.env.NOTION_TOKEN })
+            const res = await notion.databases.query({
+              database_id: process.env.DB_ID,
+              filter: { property: 'Status', select: { equals: 'Ready' } }
+            })
+            // 输出为JSON供后续Shell解析
+            return JSON.stringify(res.results.map(page => ({
+              id: page.id,
+              title: page.properties.Title.title[0]?.plain_text || 'Untitled',
+              content: page.properties.Content.rich_text[0]?.plain_text || '',
+              issue_id: page.properties['GitHub Issue ID']?.number || null,
+              hash: page.properties['Content Hash']?.formula?.string || ''
+            })))
+
+      # 3. Shell循环处理所有条目（核心修正点）
+      - name: Process All Items
+        env:
+          ITEMS_JSON: ${{ steps.fetch.outputs.result }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          NOTION_TOKEN: ${{ secrets.NOTION_API_KEY }}
+        run: |
+          echo "$ITEMS_JSON" > items.json  # 存储为临时文件
+          
+          # 使用jq解析JSON并循环
+          for item in $(jq -c '.[]' items.json); do
+            id=$(echo $item | jq -r '.id')
+            title=$(echo $item | jq -r '.title')
+            content=$(echo $item | jq -r '.content')
+            issue_id=$(echo $item | jq -r '.issue_id')
+            hash=$(echo $item | jq -r '.hash')
+
+            # 3.1 标记为同步中（防止重复执行）
+            curl -s -X PATCH "https://api.notion.com/v1/pages/$id" \
+              -H "Authorization: Bearer $NOTION_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"properties": {"Status": {"select": {"name": "Syncing"}}}}'
+
+            # 3.2 判断操作类型（创建/更新）
+            if [ "$issue_id" != "null" ]; then
+              # 检查内容是否变更
+              existing_hash=$(curl -s "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$issue_id" | jq -r '.body' | md5sum | cut -d' ' -f1)
+              if [ "$hash" != "$existing_hash" ]; then
+                # 更新Issue
+                curl -X PATCH "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$issue_id" \
+                  -H "Authorization: Bearer $GH_TOKEN" \
+                  -d '{"title": "'"$title"'", "body": "'"$content"'"}'
+                action="updated"
+              else
+                action="skipped (no change)"
+              fi
+            else
+              # 创建新Issue
+              response=$(curl -s -X POST "https://api.github.com/repos/$GITHUB_REPOSITORY/issues" \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -d '{"title": "'"$title"'", "body": "'"$content"'"}')
+              issue_id=$(echo $response | jq -r '.number')
+              action="created"
+            fi
+
+            # 3.3 更新Notion状态
+            if [ "$action" != "skipped (no change)" ]; then
+              curl -X PATCH "https://api.notion.com/v1/pages/$id" \
+                -H "Authorization: Bearer $NOTION_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "properties": {
+                    "Status": {"select": {"name": "Success"}},
+                    "GitHub Issue ID": {"number": '$issue_id'},
+                    "Last Sync": {"date": {"start": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}}
+                  }
+                }'
+            fi
+          done
+
+      # 4. 错误处理（无论成功失败都执行）
+      - name: Error Handling
+        if: always()  # 关键：确保始终执行[7](@ref)
+        run: |
+          # 检查是否有失败条目并通知（示例：Slack）
+          # 具体通知逻辑可根据需求扩展
+          echo "Error handling completed"
