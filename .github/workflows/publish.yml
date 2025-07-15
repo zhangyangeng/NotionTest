@@ -22,7 +22,6 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_API_KEY }}
           DB_ID: ${{ secrets.NOTION_DB_ID }}
-        run: echo "$NOTION_TOKEN" "DB_ID"
         with:
           script: |
             const { Client } = require('@notionhq/client')
@@ -31,6 +30,7 @@ jobs:
               database_id: process.env.DB_ID,
               filter: { property: 'Status', select: { equals: 'Ready' } }
             })
+            console.log(process.env);
             // 输出为JSON供后续Shell解析
             return JSON.stringify(res.results.map(page => ({
               id: page.id,
