@@ -30,11 +30,11 @@ jobs:
               database_id: process.env.DB_ID,
               filter: { property: 'Status', select: { equals: 'Ready' } }
             })
-            console.log(res.results)
+            console.log(res.results[0].properties)
             // 输出为JSON供后续Shell解析
             return JSON.stringify(res.results.map(page => ({
               id: page.id,
-              title: page.properties.Title.title[0]?.plain_text || 'Untitled',
+              title: page.properties.Name.title[0]?.plain_text || 'Untitled',
               content: page.properties.Content.rich_text[0]?.plain_text || '',
               issue_id: page.properties['GitHub Issue ID']?.number || null,
               hash: page.properties['Content Hash']?.formula?.string || ''
