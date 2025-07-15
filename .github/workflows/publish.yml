@@ -22,6 +22,7 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_API_KEY }}
           DB_ID: ${{ secrets.NOTION_DB_ID }}
+        run: echo "$NOTION_TOKEN" "DB_ID"
         with:
           script: |
             const { Client } = require('@notionhq/client')
