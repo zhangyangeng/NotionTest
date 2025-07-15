@@ -1,7 +1,7 @@
 name: Notion-to-GitHub-Issue-Sync
 on:
-  schedule:
-    - cron: '*/10 * * * *'  # 每10分钟轮询
+#   schedule:
+#     - cron: '*/10 * * * *'  # 每10分钟轮询
   workflow_dispatch:  # 支持手动触发
 
 jobs:
